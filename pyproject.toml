@@ -1,54 +1,38 @@
 [tool.poetry]
-name = "checksec-py"
-version = "0.7.5"
-description = "Checksec tool implemented in Python"
+name = "libchecksec-py"
+version = "0.11.4"
+description = "Static binary security-property inspection using LIEF"
 authors = ["Mathieu Tarral <mathieu.tarral@protonmail.com>"]
 readme = "README.md"
-packages = [{ include = "checksec" }]
+packages = [{ include = "libchecksec" }]
 license = "GPL-3.0-only"
-repository = "https://github.com/Wenzel/checksec.py"
+repository = "https://github.com/cardboardboxpepe/libchecksec-py"
 keywords = ["checksec", "security", "ELF", "PE", "binary"]
 
 [tool.poetry.scripts]
-checksec = 'checksec.__main__:entrypoint'
+libchecksec = "libchecksec.__main__:entrypoint"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.14.0"
+python = ">=3.10,<3.14"
 lief = "0.17.2"
-docopt = "0.6.2"
-rich = "^14.0.0"
-pylddwrap = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
-flake8 = "5.0.4"
-flake8-bugbear = "21.11.29"
-isort = "6.0.1"
-black = "25.1.0"
-mypy = "1.16.1"
 pytest = "8.4.1"
-coverage = { version = "7.9.2", extras = ["toml"] }
-poethepoet = "0.36.0"
-pyinstaller = "6.14.2"
+basedpyright = "1.40.2"
+typing-extensions = "4.15.0"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 120
 
-[tool.coverage.run]
-# measure branch coverage in addition to statement coverage
-branch = true
-
-[tool.poe.tasks]
-fmt = "black ."
-flake8 = "flake8 --show-source --statistics"
-isort = "isort --line-length 120 --profile black ."
-lint = ["flake8", "isort"]
-mypy = "mypy ."
-type = ["mypy"]
-cov_combine = "coverage combine"
-cov_report = "coverage report"
-run_test_e2e = "coverage run --concurrency=multiprocessing -m pytest -v -k e2e"
-test_e2e = ["run_test_e2e", "cov_combine", "cov_report"]
+[tool.basedpyright]
+include = ["libchecksec", "tests"]
+exclude = ["tests/typecheck/invalid.py"]
+typeCheckingMode = "strict"
+pythonVersion = "3.10"
+pythonPlatform = "All"
+reportAny = "error"
+reportExplicitAny = "error"

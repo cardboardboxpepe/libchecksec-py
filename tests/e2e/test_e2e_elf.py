@@ -1,73 +1,147 @@
-"""E2E tests for ELF"""
+"""Check observable ELF findings against the original binary fixtures."""
 
 from pathlib import Path
+from collections.abc import Callable
+from typing import cast
 
+import lief
 import pytest
 
-from checksec.elf import PIEType, RelroType
-from tests.conftest import run_checksec
-
-ELF_BINARIES = Path(__file__).parent.parent / "binaries" / "elf"
+from libchecksec import analyze
 
 
-@pytest.mark.parametrize("is_enabled", [False, True])
-@pytest.mark.parametrize("prop", ["nx", "canary", "rpath", "runpath", "symbols", "fortify_source"])
-def test_bool_prop(prop: str, is_enabled: bool):
-    """Test that boolean prop is disabled/enabled"""
-    libc_path = ELF_BINARIES / "libc-2.27.so"
-    bin_path = ELF_BINARIES / f"{prop}_{'enabled' if is_enabled else 'disabled'}"
-    chk_data = run_checksec(bin_path, libc_path)
-    assert chk_data[str(bin_path)][prop] == is_enabled
+def _parse_fixture(path: str) -> lief.Binary:
+    """Parse a fixture through LIEF's string input boundary."""
+    # LIEF's stub leaves PathLike unparameterized; this helper passes strings.
+    parse = cast(Callable[[str], lief.Binary | None], lief.parse)
+    binary = parse(path)
+    assert binary is not None
+    return binary
 
 
-@pytest.mark.parametrize("relro_type", list(RelroType))
-def test_relro(relro_type: RelroType):
-    """Test that relro type is No/Partial/Full/NA"""
-    bin_path = ELF_BINARIES / f"relro_{relro_type.name.lower()}"
-    chk_data = run_checksec(bin_path)
-    assert chk_data[str(bin_path)]["relro"] == relro_type.name
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("name", ["nx", "canary", "rpath", "runpath", "symbols"])
+def test_fixture_properties(binaries: Path, name: str, enabled: bool) -> None:
+    """Analyze each positive/negative fixture and verify the corresponding status.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+        name: Name of the fixture or symbol under test.
+        enabled: Whether the fixture should report the property as enabled.
+    """
+    path = binaries / "elf" / f"{name}_{'enabled' if enabled else 'disabled'}"
+    result = analyze(path).to_dict()
+    key = "stack_canary" if name == "canary" else name
+    status = result["checks"][key]["status"]
+    assert status in ({"enabled", "present"} if enabled else {"disabled", "absent"})
 
 
-def test_relro_full_df1():
-    """Test that relro type is full via dynamic flags 1"""
-    bin_path = ELF_BINARIES / "relro_full_FLAGS_1"
-    chk_data = run_checksec(bin_path)
-    assert chk_data[str(bin_path)]["relro"] == RelroType.Full.name
+@pytest.mark.parametrize("status", ["full", "partial", "no", "na"])
+def test_relro(binaries: Path, status: str) -> None:
+    """Preserve full, partial, absent, and inapplicable RELRO distinctions.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+        status: Expected status of the finding.
+    """
+    result = analyze(binaries / "elf" / f"relro_{status}").to_dict()
+    expected = {"no": "absent", "na": "not_applicable"}.get(status, status)
+    assert result["checks"]["relro"]["status"] == expected
 
 
-@pytest.mark.parametrize("pie_type", list(PIEType))
-def test_pie(pie_type):
-    """Test that PIE is No/Partial/Full/NA"""
-    bin_path = ELF_BINARIES / f"pie_{pie_type.name.lower()}"
-    chk_data = run_checksec(bin_path)
-    assert chk_data[str(bin_path)]["pie"] == pie_type.name
+def test_relro_flags_one(binaries: Path) -> None:
+    """Recognize immediate binding through the FLAGS_1 dynamic entry.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+    """
+    result = analyze(binaries / "elf" / "relro_full_FLAGS_1").to_dict()
+    assert result["checks"]["relro"]["status"] == "full"
 
 
-def test_fortified():
-    """Test the fortified functions"""
-    libc_path = ELF_BINARIES / "libc-2.27.so"
-    bin_path = ELF_BINARIES / "fortify_funcs"
-    chk_data = run_checksec(bin_path, libc_path)
-    fortified_funcs = ["__fprintf_chk@@GLIBC_2.3.4", "__printf_chk@@GLIBC_2.3.4"]
-    assert chk_data[str(bin_path)]["fortified"] == len(fortified_funcs)
+@pytest.mark.parametrize(
+    "kind,status", [("no", "disabled"), ("pie", "enabled"), ("dso", "dso"), ("rel", "not_applicable")]
+)
+def test_pie(binaries: Path, kind: str, status: str) -> None:
+    """Distinguish PIE executables from shared objects and relocatable objects.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+        kind: Input or ELF kind under test.
+        status: Expected status of the finding.
+    """
+    result = analyze(binaries / "elf" / f"pie_{kind}").to_dict()
+    assert result["checks"]["pie"]["status"] == status
 
 
-def test_fortifiable():
-    """Test the fortifiable functions"""
-    libc_path = ELF_BINARIES / "libc-2.27.so"
-    bin_path = ELF_BINARIES / "fortify_funcs"
-    chk_data = run_checksec(bin_path, libc_path)
-    fortified_funcs = ["__fprintf_chk@@GLIBC_2.3.4", "__printf_chk@@GLIBC_2.3.4"]
-    non_fortified_funcs = ["fgets"]
-    assert chk_data[str(bin_path)]["fortify-able"] == len(fortified_funcs) + len(non_fortified_funcs)
+def test_fortify_with_reference(binaries: Path) -> None:
+    """Count fortified and eligible imports using an explicitly supplied libc.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+    """
+    result = analyze(binaries / "elf" / "fortify_funcs", reference_libc=binaries / "elf" / "libc-2.27.so").to_dict()
+    fortify = result["checks"]["fortify"]
+    assert "fortified_symbols" in fortify
+    assert len(fortify["fortified_symbols"]) == 2
+    assert fortify["fortifiable_symbols"] is not None
+    assert len(fortify["fortifiable_symbols"]) == 3
+    assert fortify["coverage"] is not None
+    assert abs(fortify["coverage"] - 100 * 2 / 3) <= 0.01
 
 
-def test_fortify_score():
-    """Test the fortify score"""
-    libc_path = ELF_BINARIES / "libc-2.27.so"
-    bin_path = ELF_BINARIES / "fortify_funcs"
-    chk_data = run_checksec(bin_path, libc_path)
-    fortified_funcs = ["__fprintf_chk@@GLIBC_2.3.4", "__printf_chk@@GLIBC_2.3.4"]
-    non_fortified_funcs = ["fgets"]
-    total = len(fortified_funcs) + len(non_fortified_funcs)
-    assert chk_data[str(bin_path)]["fortify_score"] == round((2 * 100) / total, 0)
+def test_fortify_reference_does_not_leak(binaries: Path) -> None:
+    """Ensure one call's explicit libc never affects another call's findings.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+    """
+    path = binaries / "elf" / "fortify_funcs"
+    analyze(path, reference_libc=binaries / "elf" / "libc-2.27.so")
+    fortify = analyze(path).to_dict()["checks"]["fortify"]
+    assert fortify["status"] == "enabled"
+    assert "fortified_symbols" in fortify
+    assert len(fortify["fortified_symbols"]) == 2
+    assert fortify["fortifiable_symbols"] is None
+    assert fortify["coverage"] is None
+
+
+def test_runnable_libc_remains_shared_object(binaries: Path) -> None:
+    """Avoid interpreting libc's interpreter segment as proof of PIE status.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+    """
+    result = analyze(binaries / "elf" / "libc-2.27.so").to_dict()
+    assert result["checks"]["pie"]["status"] == "dso"
+
+
+def test_interpreter_without_soname_is_ambiguous(binaries: Path) -> None:
+    """Treat optional SONAME removal as ambiguous rather than proof of PIE.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+    """
+    from libchecksec.elf import analyze_elf
+
+    binary = _parse_fixture(str(binaries / "elf" / "libc-2.27.so"))
+    assert isinstance(binary, lief.ELF.Binary)
+    binary.remove(lief.ELF.DynamicEntry.TAG.SONAME)
+    checks, _, _ = analyze_elf(binary)
+    assert dict(checks)["pie"].status.value == "unknown"
+
+
+def test_no_program_segments_have_no_stack_policy(binaries: Path) -> None:
+    """Do not infer runtime stack policy for an ELF without program segments.
+
+    Args:
+        binaries: Directory containing the pinned binary fixtures.
+    """
+    from libchecksec.elf import analyze_elf
+
+    binary = _parse_fixture(str(binaries / "elf" / "relro_na"))
+    assert isinstance(binary, lief.ELF.Binary)
+    assert not binary.segments
+    binary.header.file_type = lief.ELF.Header.FILE_TYPE.NONE
+    checks, _, _ = analyze_elf(binary)
+    assert dict(checks)["nx"].status.value == "not_applicable"

@@ -81,6 +81,30 @@ The CLI accepts explicit files, prints successful results even when another
 file fails, and exits nonzero if any file cannot be analyzed. JSON output is
 an object for one successful requested file and an array for multiple files.
 
+## Example output
+
+```sh
+libchecksec /usr/bin/bash
+```
+
+```text
+/usr/bin/bash: ELF x86_64 (64-bit, little)
+  relro: full
+  stack_canary: enabled (Inferred from symbols; absence does not prove no stack protection)
+  nx: enabled
+  pie: enabled
+  rpath: absent
+  runpath: absent
+  symbols: absent
+  fortify: unknown (No reference libc supplied; fortifiable imports are unknown)
+  image base: unknown
+  preferred image base: 0x0
+  entry: 0x40ec0 (image_relative)
+  main: unknown (No defined nonzero main function symbol)
+```
+
+This snapshot is from the host's Bash 5.3.20; results vary by file and host. See [OUTPUTS.md](OUTPUTS.md) for JSON examples, all checks, and output semantics.
+
 ## Development and tests
 
 Initialize the fixture submodule and install the package and test tools:

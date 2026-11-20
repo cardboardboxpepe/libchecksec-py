@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import struct
+from collections.abc import Callable
+from typing import cast
 
 import lief
 
@@ -14,8 +15,15 @@ from .models import AnalysisResult
 def _parse(path: Path) -> lief.Binary:
     """Parse the regular file at path once and return its LIEF binary.
 
-    Raise ErrorParsingFailed for inaccessible or malformed recognized inputs and
-    UnsupportedFormatError for files without an ELF or PE signature.
+    Args:
+        path: File to classify and parse.
+
+    Returns:
+        Parsed ELF or PE binary.
+
+    Raises:
+        ErrorParsingFailed: The file is inaccessible or malformed.
+        UnsupportedFormatError: The file is not a supported ELF or PE.
     """
     try:
         if not path.is_file():
@@ -33,7 +41,10 @@ def _parse(path: Path) -> lief.Binary:
     if signature == b"\x7fELF":
         _validate_elf_header(path, header, size)
     try:
-        binary = lief.parse(str(path))
+        # LIEF's parse stub leaves PathLike unparameterized; this library passes
+        # only strings and validates the returned format below.
+        parse = cast(Callable[[str], lief.Binary | None], lief.parse)
+        binary = parse(str(path))
     except Exception as exc:
         raise ErrorParsingFailed(path) from exc
     if binary is None:
@@ -44,24 +55,36 @@ def _parse(path: Path) -> lief.Binary:
 
 
 def _validate_elf_header(path: Path, header: bytes, size: int) -> None:
-    """Validate the ELF header and declared tables against the file size."""
+    """Validate the ELF header and declared tables against the file size.
+
+    Args:
+        path: Input path used in errors.
+        header: Initial bytes of the input file.
+        size: Total input size in bytes.
+
+    Raises:
+        ErrorParsingFailed: The header or table bounds are invalid.
+    """
     if len(header) < 16 or header[4] not in (1, 2) or header[5] not in (1, 2) or header[6] != 1:
         raise ErrorParsingFailed(path, "Invalid ELF identification")
     bits = header[4]
     minimum = 52 if bits == 1 else 64
     if len(header) < minimum:
         raise ErrorParsingFailed(path, "Truncated ELF header")
-    order = "<" if header[5] == 1 else ">"
-    try:
-        if bits == 1:
-            phoff, shoff = struct.unpack_from(order + "II", header, 28)
-            ehsize, phentsize, phnum, shentsize, shnum = struct.unpack_from(order + "HHHHH", header, 40)
-        else:
-            phoff, shoff = struct.unpack_from(order + "QQ", header, 32)
-            ehsize, phentsize, phnum, shentsize, shnum = struct.unpack_from(order + "HHHHH", header, 52)
-        version = struct.unpack_from(order + "I", header, 20)[0]
-    except struct.error as exc:
-        raise ErrorParsingFailed(path, "Invalid ELF header") from exc
+    byteorder = "little" if header[5] == 1 else "big"
+
+    def read_int(offset: int, width: int) -> int:
+        """Read a fixed-width integer from the validated header."""
+        return int.from_bytes(header[offset : offset + width], byteorder)
+
+    if bits == 1:
+        phoff, shoff = read_int(28, 4), read_int(32, 4)
+        table_offset = 40
+    else:
+        phoff, shoff = read_int(32, 8), read_int(40, 8)
+        table_offset = 52
+    ehsize, phentsize, phnum, shentsize, shnum = (read_int(table_offset + offset, 2) for offset in (0, 2, 4, 6, 8))
+    version = read_int(20, 4)
     if version != 1 or ehsize < minimum or ehsize > size:
         raise ErrorParsingFailed(path, "Invalid ELF header")
     for offset, entry_size, count, min_entry in (
@@ -79,7 +102,17 @@ def _enum_name(value: object) -> str:
 
 
 def _metadata(binary: lief.Binary) -> tuple[str, str, int | None, str]:
-    """Return format, architecture, bit width and byte order for binary."""
+    """Extract format-independent metadata.
+
+    Args:
+        binary: Parsed ELF or PE binary.
+
+    Returns:
+        Format, architecture, optional bit width and byte order.
+
+    Raises:
+        TypeError: The parsed binary is not ELF or PE.
+    """
     if isinstance(binary, lief.ELF.Binary):
         header = binary.header
         arch = _enum_name(header.machine_type).lower()
@@ -98,14 +131,27 @@ def _metadata(binary: lief.Binary) -> tuple[str, str, int | None, str]:
 def analyze(path: Path | str, reference_libc: Path | str | None = None) -> AnalysisResult:
     """Analyze path once, optionally using the explicitly supplied ELF libc.
 
-    The optional reference_libc is parsed once and used only for ELF analysis.
-    Return an immutable AnalysisResult; input failures raise AnalysisError.
+    Args:
+        path: Path to the ELF or PE binary to analyze.
+        reference_libc: Optional path to an ELF libc used for fortify coverage.
+            It is parsed once and used only for ELF analysis.
+
+    Returns:
+        Immutable analysis result with metadata, findings, and warnings.
+
+    Raises:
+        ErrorParsingFailed: An input is inaccessible or cannot be parsed.
+        UnsupportedFormatError: An input has an unsupported format, or the
+            reference libc is not ELF.
     """
     target_path = Path(path)
     binary = _parse(target_path)
-    reference = _parse(Path(reference_libc)) if reference_libc is not None else None
-    if reference is not None and not isinstance(reference, lief.ELF.Binary):
-        raise UnsupportedFormatError(Path(reference_libc))
+    reference = None
+    if reference_libc is not None:
+        reference_path = Path(reference_libc)
+        reference = _parse(reference_path)
+        if not isinstance(reference, lief.ELF.Binary):
+            raise UnsupportedFormatError(reference_path)
 
     # Dispatch already-parsed binaries and collect format-independent metadata.
     if isinstance(binary, lief.ELF.Binary):

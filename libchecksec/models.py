@@ -5,7 +5,77 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import TypedDict
+
+
+class _FindingRequired(TypedDict):
+    """JSON-compatible representation of a standard finding."""
+
+    status: str
+    evidence: list[str]
+
+
+class _FindingOptional(TypedDict, total=False):
+    """Optional fields in a standard finding."""
+
+    reason: str
+
+
+class FindingDict(_FindingRequired, _FindingOptional):
+    """JSON-compatible finding; reason is present only when available."""
+
+
+class _FortifyRequired(TypedDict):
+    """Required fields in a fortification finding."""
+
+    status: str
+    fortified_symbols: list[str]
+    fortifiable_symbols: list[str] | None
+    coverage: float | None
+
+
+class _FortifyOptional(TypedDict, total=False):
+    """Optional fields in a fortification finding."""
+
+    evidence: list[str]
+    reason: str
+
+
+class FortifyFindingDict(_FortifyRequired, _FortifyOptional):
+    """JSON-compatible fortification finding; evidence and reason are optional."""
+
+
+class AddressLocationDict(TypedDict):
+    """JSON-compatible address location, retaining unavailable values as null."""
+
+    address: int | None
+    kind: str | None
+    symbol: str | None
+    reason: str | None
+
+
+class AddressInfoDict(TypedDict):
+    """JSON-compatible image bases and entry and main locations."""
+
+    image_base: int | None
+    preferred_image_base: int | None
+    entry: AddressLocationDict
+    main: AddressLocationDict
+
+
+class AnalysisResultDict(TypedDict):
+    """Versioned JSON-compatible analysis and its metadata and findings."""
+
+    schema_version: int
+    file: str
+    format: str
+    architecture: str
+    bits: int | None
+    endianness: str
+    needed_libraries: list[str]
+    checks: dict[str, FindingDict | FortifyFindingDict]
+    warnings: list[str]
+    addresses: AddressInfoDict | None
 
 
 class Status(str, Enum):
@@ -24,15 +94,21 @@ class Status(str, Enum):
 
 @dataclass(frozen=True)
 class Finding:
-    """Describe a check by status, supporting evidence and optional reason."""
+    """Describe a check by status, supporting evidence and optional reason.
+
+    Attributes:
+        status: Outcome of the check.
+        evidence: Statements supporting the outcome.
+        reason: Explanation when the outcome needs qualification.
+    """
 
     status: Status
     evidence: tuple[str, ...] = ()
     reason: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> FindingDict:
         """Return a fresh JSON-compatible representation of this finding."""
-        result: dict[str, Any] = {"status": self.status.value, "evidence": list(self.evidence)}
+        result: FindingDict = {"status": self.status.value, "evidence": list(self.evidence)}
         if self.reason is not None:
             result["reason"] = self.reason
         return result
@@ -40,7 +116,17 @@ class Finding:
 
 @dataclass(frozen=True)
 class FortifyFinding:
-    """Describe fortification status, symbol coverage, evidence and reason."""
+    """Describe fortification status and symbol coverage.
+
+    Attributes:
+        status: Outcome of the fortification check.
+        fortified_symbols: Detected fortified symbols.
+        fortifiable_symbols: Symbols eligible for fortification, if known.
+        coverage: Percentage of eligible imported symbols fortified, if known;
+            statically defined target symbols are excluded.
+        evidence: Statements supporting the outcome.
+        reason: Explanation when the outcome needs qualification.
+    """
 
     status: Status
     fortified_symbols: tuple[str, ...] = ()
@@ -49,9 +135,9 @@ class FortifyFinding:
     evidence: tuple[str, ...] = ()
     reason: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> FortifyFindingDict:
         """Return fresh JSON-compatible fortification data, preserving nulls."""
-        result: dict[str, Any] = {
+        result: FortifyFindingDict = {
             "status": self.status.value,
             "fortified_symbols": list(self.fortified_symbols),
             "fortifiable_symbols": (list(self.fortifiable_symbols) if self.fortifiable_symbols is not None else None),
@@ -66,28 +152,42 @@ class FortifyFinding:
 
 @dataclass(frozen=True)
 class AddressLocation:
-    """Describe an address, its interpretation, associated symbol and reason."""
+    """Describe an address and its interpretation.
+
+    Attributes:
+        address: Numeric address, or None when unavailable.
+        kind: Interpretation of the address, if known.
+        symbol: Associated symbol, if known.
+        reason: Explanation when the location is unavailable or qualified.
+    """
 
     address: int | None
     kind: str | None
     symbol: str | None = None
     reason: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> AddressLocationDict:
         """Return the address and its attributes as JSON-compatible values."""
         return {"address": self.address, "kind": self.kind, "symbol": self.symbol, "reason": self.reason}
 
 
 @dataclass(frozen=True)
 class AddressInfo:
-    """Describe the image base, preferred base, entry point and main symbol."""
+    """Describe image bases and significant locations.
+
+    Attributes:
+        image_base: Statically inferred image base, if known; runtime relocation is unavailable.
+        preferred_image_base: Preferred image base from the file, if known.
+        entry: Executable entry point.
+        main: Main symbol location.
+    """
 
     image_base: int | None
     preferred_image_base: int | None
     entry: AddressLocation
     main: AddressLocation
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> AddressInfoDict:
         """Return fresh JSON-compatible address metadata, preserving nulls."""
         return {
             "image_base": self.image_base,
@@ -99,7 +199,20 @@ class AddressInfo:
 
 @dataclass(frozen=True)
 class AnalysisResult:
-    """Hold a versioned analysis, its file metadata, checks and warnings."""
+    """Hold a versioned analysis, its file metadata, checks and warnings.
+
+    Attributes:
+        schema_version: Version of the serialized result schema.
+        file: Path of the analyzed file.
+        format: Binary format name.
+        architecture: Processor architecture name.
+        bits: Binary bit width, if known.
+        endianness: Byte order name.
+        needed_libraries: Names of required shared libraries.
+        checks: Named security findings in output order.
+        warnings: Analysis warnings.
+        addresses: Address metadata, if available.
+    """
 
     schema_version: int
     file: str
@@ -112,7 +225,7 @@ class AnalysisResult:
     warnings: tuple[str, ...]
     addresses: AddressInfo | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> AnalysisResultDict:
         """Return a new JSON-compatible dictionary for the entire analysis."""
         return {
             "schema_version": self.schema_version,
@@ -128,7 +241,14 @@ class AnalysisResult:
         }
 
     def to_json(self, *, indent: int | None = None) -> str:
-        """Serialize this result to JSON using the optional indentation width."""
+        """Serialize this result to JSON.
+
+        Args:
+            indent: JSON indentation width, or None for compact output.
+
+        Returns:
+            Serialized JSON representation of the result.
+        """
         return json.dumps(self.to_dict(), indent=indent)
 
     def to_text(self) -> str:

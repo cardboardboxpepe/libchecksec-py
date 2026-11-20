@@ -2,6 +2,7 @@
 
 import lief
 
+from ._lief import lief_text
 from .models import Finding, FortifyFinding, Status
 
 
@@ -11,9 +12,19 @@ def _boolean(enabled: bool, evidence: str) -> Finding:
 
 
 def _signature(binary: lief.PE.Binary) -> Finding:
-    """Check binary's Authenticode integrity without asserting certificate trust."""
+    """Check Authenticode integrity without asserting certificate trust.
+
+    Args:
+        binary: Parsed PE binary to inspect.
+
+    Returns:
+        The signature integrity status and supporting evidence.
+    """
     if not binary.has_signatures:
-        directory = binary.data_directory(lief.PE.DataDirectory.TYPES.CERTIFICATE_TABLE)
+        directory = next(
+            (entry for entry in binary.data_directories if entry.type == lief.PE.DataDirectory.TYPES.CERTIFICATE_TABLE),
+            None,
+        )
         if directory is not None and (directory.rva or directory.size):
             return Finding(
                 Status.UNKNOWN,
@@ -36,7 +47,14 @@ def _signature(binary: lief.PE.Binary) -> Finding:
 def analyze_pe(
     binary: lief.PE.Binary,
 ) -> tuple[tuple[tuple[str, Finding | FortifyFinding], ...], tuple[str, ...], tuple[str, ...]]:
-    """Analyze parsed PE binary and return checks, imported libraries, and warnings."""
+    """Analyze mitigation evidence in a parsed PE binary.
+
+    Args:
+        binary: Parsed PE binary to inspect.
+
+    Returns:
+        A tuple of named findings, imported libraries, and warnings.
+    """
     # Header flags supply the base mitigation and compatibility indications.
     optional = binary.optional_header
     header = binary.header
@@ -97,4 +115,9 @@ def analyze_pe(
         ),
         ("authenticode", _signature(binary)),
     )
-    return checks, tuple(item.name for item in binary.imports) + tuple(item.name for item in binary.delay_imports), ()
+    return (
+        checks,
+        tuple(lief_text(item.name) for item in binary.imports)
+        + tuple(lief_text(item.name) for item in binary.delay_imports),
+        (),
+    )

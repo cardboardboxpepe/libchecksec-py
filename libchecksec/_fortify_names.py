@@ -28,8 +28,8 @@ CHECKED_TO_BASE["__fdelt_chk"] = "fdelt"
 
 # glibc defines these long-double compatibility functions with checked aliases.
 NLDBL_FUNCTIONS = frozenset(
-    "fprintf fwprintf printf snprintf sprintf swprintf vfprintf vfwprintf vprintf "
-    "vsnprintf vsprintf vswprintf vwprintf wprintf vasprintf asprintf vdprintf dprintf "
-    "obstack_vprintf obstack_printf syslog vsyslog".split()
+    """fprintf fwprintf printf snprintf sprintf swprintf vfprintf vfwprintf vprintf
+    vsnprintf vsprintf vswprintf vwprintf wprintf vasprintf asprintf vdprintf dprintf
+    obstack_vprintf obstack_printf syslog vsyslog""".split()
 )
 CHECKED_TO_BASE.update({f"__nldbl___{name}_chk": f"__nldbl_{name}" for name in NLDBL_FUNCTIONS})

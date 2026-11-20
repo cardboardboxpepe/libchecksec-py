@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import lief
 
+from ._lief import lief_text
 from .models import AddressInfo, AddressLocation
 
 
@@ -13,7 +14,14 @@ def _unknown(reason: str) -> AddressLocation:
 
 
 def _elf(binary: lief.ELF.Binary) -> AddressInfo:
-    """Return static entry and main addresses for the parsed ELF binary."""
+    """Find static entry and main addresses in an ELF binary.
+
+    Args:
+        binary: Parsed ELF binary to inspect.
+
+    Returns:
+        Address metadata and reasons for unavailable values.
+    """
     kind = binary.header.file_type
     if kind not in (lief.ELF.Header.FILE_TYPE.EXEC, lief.ELF.Header.FILE_TYPE.DYN):
         unavailable = _unknown("ELF type has no loadable process address")
@@ -40,7 +48,7 @@ def _elf(binary: lief.ELF.Binary) -> AddressInfo:
     mains = [
         s
         for s in binary.symbols
-        if s.name == "main" and s.value and s.type == lief.ELF.Symbol.TYPE.FUNC and s.shndx != 0
+        if lief_text(s.name) == "main" and s.value and s.type == lief.ELF.Symbol.TYPE.FUNC and s.shndx != 0
     ]
     if mains:
         value = mains[0].value
@@ -53,7 +61,14 @@ def _elf(binary: lief.ELF.Binary) -> AddressInfo:
 
 
 def _pe(binary: lief.PE.Binary) -> AddressInfo:
-    """Return static entry and main addresses for the parsed PE binary."""
+    """Find static entry and main addresses in a PE binary.
+
+    Args:
+        binary: Parsed PE binary to inspect.
+
+    Returns:
+        Address metadata and reasons for unavailable values.
+    """
     # Header flags indicate whether the preferred base can be randomized.
     preferred = binary.optional_header.imagebase
     dynamic = binary.optional_header.has(lief.PE.OptionalHeader.DLL_CHARACTERISTICS.DYNAMIC_BASE)
@@ -71,7 +86,11 @@ def _pe(binary: lief.PE.Binary) -> AddressInfo:
     # COFF function symbol values are offsets within their section.
     main = _unknown("No defined COFF main function symbol")
     for symbol in binary.symbols:
-        if symbol.name not in ("main", "_main", "wmain", "_wmain") or symbol.is_undefined or not symbol.is_function:
+        if (
+            lief_text(symbol.name) not in ("main", "_main", "wmain", "_wmain")
+            or symbol.is_undefined
+            or not symbol.is_function
+        ):
             continue
         sections = list(binary.sections)
         section_index = symbol.section_idx
@@ -81,7 +100,7 @@ def _pe(binary: lief.PE.Binary) -> AddressInfo:
         main = AddressLocation(
             address=symbol_rva if relocatable else preferred + symbol_rva,
             kind=address_kind,
-            symbol=symbol.name,
+            symbol=lief_text(symbol.name),
             reason=None,
         )
         break
@@ -89,7 +108,14 @@ def _pe(binary: lief.PE.Binary) -> AddressInfo:
 
 
 def analyze_addresses(binary: lief.Binary) -> AddressInfo:
-    """Return entry and main address metadata for a parsed ELF or PE binary."""
+    """Find entry and main address metadata for a parsed binary.
+
+    Args:
+        binary: Parsed binary, supported for ELF and PE formats.
+
+    Returns:
+        Address metadata and reasons for unavailable values.
+    """
     if isinstance(binary, lief.ELF.Binary):
         return _elf(binary)
     if isinstance(binary, lief.PE.Binary):

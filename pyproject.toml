@@ -2,7 +2,7 @@
 name = "libchecksec-py"
 version = "0.11.4"
 description = "Static binary security-property inspection using LIEF"
-authors = ["Mathieu Tarral <mathieu.tarral@protonmail.com>"]
+authors = ["Mathieu Tarral <mathieu.tarral@protonmail.com>", "bruh <cardboardboxpepe@gmail.com>"]
 readme = "README.md"
 packages = [{ include = "libchecksec" }]
 license = "GPL-3.0-only"

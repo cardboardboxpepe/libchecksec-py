@@ -63,11 +63,12 @@ ELF fortify analysis can use an explicitly supplied reference libc:
 result = analyze("./program", reference_libc="/path/to/libc.so.6")
 ```
 
-Without a reference, fortifiable symbols and coverage are unknown (`null` in
-JSON), even when fortified imports are visible. A reference library should
-match the target's environment; the analyzer does not discover the target's
-libc automatically. Fortification coverage is based on imported symbol
-information, not a proof that all relevant code is protected.
+Recognized fortified function symbols provide positive evidence even without a
+reference. Without one, fortifiable imports and coverage remain unknown (`null`
+in JSON). A reference library should match the target's environment; the
+analyzer does not discover the target's libc automatically. Fortification
+coverage is based on imported symbol information, not a proof that all
+relevant code is protected.
 
 ## Command line
 
@@ -96,7 +97,7 @@ libchecksec /usr/bin/bash
   rpath: absent
   runpath: absent
   symbols: absent
-  fortify: unknown (No reference libc supplied; fortifiable imports are unknown)
+  fortify: enabled (No reference libc supplied; fortifiable import coverage is unknown)
   image base: unknown
   preferred image base: 0x0
   entry: 0x40ec0 (image_relative)

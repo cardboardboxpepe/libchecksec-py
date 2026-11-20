@@ -1,6 +1,6 @@
 # Output reference
 
-These examples were captured with libchecksec-py 0.10.2 and LIEF 0.17.2 (`0.17.2-aa2b617f`). Captured on 2026-11-20, the host's `/usr/bin/bash` was GNU Bash 5.3.20(1)-release and had SHA-256 `4387a4c2e6503752e83d8139d2a2a4c92113268614856b4706212fdab6c14dc3`. Results, paths, dependencies, and addresses vary with the files and environment. Analysis parses files; it does not execute Bash or the target.
+These examples were captured with libchecksec-py 0.11.1 and LIEF 0.17.2 (`0.17.2-aa2b617f`). Captured on 2026-11-20, the host's `/usr/bin/bash` was GNU Bash 5.3.20(1)-release and had SHA-256 `4387a4c2e6503752e83d8139d2a2a4c92113268614856b4706212fdab6c14dc3`. Results, paths, dependencies, and addresses vary with the files and environment. Analysis parses files; it does not execute Bash or the target.
 
 ## Command line
 
@@ -109,7 +109,7 @@ The equivalent JSON command produced `[]` on stdout with the same stderr and exi
       ]
     },
     "fortify": {
-      "status": "unknown",
+      "status": "enabled",
       "fortified_symbols": [
         "__fdelt_chk",
         "__fprintf_chk",
@@ -129,7 +129,7 @@ The equivalent JSON command produced `[]` on stdout with the same stderr and exi
       ],
       "fortifiable_symbols": null,
       "coverage": null,
-      "reason": "No reference libc supplied; fortifiable imports are unknown"
+      "reason": "No reference libc supplied; fortifiable import coverage is unknown"
     }
   },
   "warnings": [],
@@ -291,7 +291,7 @@ With `--reference-libc /usr/lib64/libc.so.6`, the same file produced:
 }
 ```
 
-Without a reference, observed imports matching `__*_chk` are listed but the set of fortifiable imports and coverage are unknown. With a reference, defined `__*_chk` symbols in that ELF are matched against imported functions and their base names. Coverage is `100 * fortified imports / fortifiable imports`; it is an import-based measure, not proof of complete protection. If there are no matching candidates, status is `not_applicable`, the candidate list is empty, and coverage is null. A matching reference can therefore change the status, lists, and coverage.
+Recognized glibc checked function symbols, whether imported or defined, provide positive fortification evidence. The recognized names come from documented glibc fortified functions, including `__fdelt_chk` for the `FD_*` macros and documented `__nldbl___` variants; arbitrary `__*_chk` names do not count. Without a reference, the fortifiable imports and coverage are unknown. With a reference, its defined recognized checked functions are matched against target imports and their base names. Coverage is `100 * matching fortified imports / fortifiable imports`; it is an import-based measure, not proof of complete protection. Positive evidence sets status to `enabled` even if coverage is unknown or zero. With no positive evidence, status is `unknown` without a reference, `not_applicable` if no imports match the reference, and `disabled` if candidates exist but none are fortified.
 
 ## Captured PE JSON
 
@@ -481,7 +481,7 @@ These are the statuses emitted by the current analyzers, not a claim that the un
 - `pie`: `enabled` for ET_DYN with DF_1_PIE or DT_DEBUG; `unknown` for ET_DYN with an interpreter alone and no SONAME; `dso` for other ET_DYN; `not_applicable` for ET_REL; otherwise `disabled`.
 - `rpath` and `runpath`: `present` or `absent`, with dynamic path values in evidence.
 - `symbols`: `present` or `absent` based on named static symbols; evidence gives the count.
-- `fortify`: `unknown` without a reference, `not_applicable` when no imported candidates match the reference, `enabled` when candidates include fortified imports, or `disabled` when candidates exist but none are fortified.
+- `fortify`: `enabled` when a recognized checked function is observed; otherwise `unknown` without a reference, `not_applicable` when no imported candidates match the reference, or `disabled` when candidates exist but none are fortified. Coverage is independent of positive detection and can be null or zero when status is `enabled`.
 
 ### PE
 

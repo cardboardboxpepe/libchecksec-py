@@ -55,7 +55,7 @@ def test_fortify_reference_does_not_leak(binaries: Path) -> None:
     path = binaries / "elf" / "fortify_funcs"
     analyze(path, reference_libc=binaries / "elf" / "libc-2.27.so")
     fortify = analyze(path).to_dict()["checks"]["fortify"]
-    assert fortify["status"] == "unknown"
+    assert fortify["status"] == "enabled"
     assert len(fortify["fortified_symbols"]) == 2
     assert fortify["fortifiable_symbols"] is None
     assert fortify["coverage"] is None

@@ -2,6 +2,7 @@
 
 import lief
 
+from ._fortify_names import CHECKED_TO_BASE
 from .models import Finding, FortifyFinding, Status
 
 
@@ -84,36 +85,37 @@ def _path(binary: lief.ELF.Binary, tag: lief.ELF.DynamicEntry.TAG) -> Finding:
 
 
 def _fortify(binary: lief.ELF.Binary, reference_libc: lief.ELF.Binary | None) -> FortifyFinding:
-    """Assess imported functions against reference_libc and return coverage as a percentage."""
-    # Only undefined imported functions participate in the coverage denominator.
-    imports = {s.name for s in binary.dynamic_symbols if s.imported and s.name and s.type == lief.ELF.Symbol.TYPE.FUNC}
-    observed = {name for name in imports if name.startswith("__") and name.endswith("_chk")}
+    """Assess binary's fortified functions and optional reference-based import coverage."""
+    function_types = {lief.ELF.Symbol.TYPE.FUNC, lief.ELF.Symbol.TYPE.GNU_IFUNC}
+    # Positive evidence includes definitions as well as imports, but never data symbols.
+    observed = {s.name for s in binary.symbols if s.type in function_types and s.name in CHECKED_TO_BASE}
     if reference_libc is None:
         return FortifyFinding(
-            Status.UNKNOWN,
+            Status.ENABLED if observed else Status.UNKNOWN,
             fortified_symbols=tuple(sorted(observed)),
-            reason="No reference libc supplied; fortifiable imports are unknown",
+            reason="No reference libc supplied; fortifiable import coverage is unknown",
         )
-    fortified_libc = {
+
+    # Coverage counts only imported functions with checked variants in the reference.
+    imports = {s.name for s in binary.dynamic_symbols if s.imported and s.name and s.type in function_types}
+    checked = {
         s.name
         for s in reference_libc.dynamic_symbols
-        if s.name.startswith("__") and s.name.endswith("_chk") and not s.imported
+        if s.name in CHECKED_TO_BASE and not s.imported and s.type in function_types
     }
-    fortified = imports & fortified_libc
-    bases = {name[2:-4] for name in fortified_libc}
-    candidates = imports & (fortified_libc | bases)
+    candidates = imports & (checked | {CHECKED_TO_BASE[name] for name in checked})
     if not candidates:
         return FortifyFinding(
-            Status.NOT_APPLICABLE,
-            fortified_symbols=tuple(sorted(fortified)),
+            Status.ENABLED if observed else Status.NOT_APPLICABLE,
+            fortified_symbols=tuple(sorted(observed)),
             fortifiable_symbols=(),
             reason="No fortifiable imported functions found in the reference libc",
         )
     return FortifyFinding(
-        Status.ENABLED if fortified else Status.DISABLED,
-        fortified_symbols=tuple(sorted(fortified)),
+        Status.ENABLED if observed else Status.DISABLED,
+        fortified_symbols=tuple(sorted(observed)),
         fortifiable_symbols=tuple(sorted(candidates)),
-        coverage=100.0 * len(fortified) / len(candidates),
+        coverage=100.0 * len(imports & checked) / len(candidates),
     )
 
 

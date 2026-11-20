@@ -1,195 +1,87 @@
-<h1 align="center">
-  <br>checksec.py</br>
-</h1>
+# libchecksec-py
 
-<h3 align="center">
-Checksec tool in Python, Rich output, based on LIEF
-</h3>
+A Python library for inspecting ELF and PE binary security properties with
+[LIEF](https://lief.re/). It reports static evidence and uncertainty rather
+than executing a file or resolving its dependencies.
 
-<p align="center">
-  <strong>
-  <a href="https://asciinema.org/a/363216">
-    Demo
-  </a>
-  </strong>
-</p>
+## Installation
 
-<p align="center">
-  <a href="https://github.com/Wenzel/checksec.py/actions?query=workflow%3ACI">
-    <img src="https://github.com/Wenzel/checksec.py/workflows/CI/badge.svg" alt="CI badge"/>
-  </a>
-  <a href="https://pypi.org/project/checksec.py/">
-    <img src="https://img.shields.io/pypi/v/checksec.py?color=blue" alt="PyPI package badge"/>
-  </a>
-  <a href="https://pypi.org/project/checksec.py/">
-    <img src="https://img.shields.io/pypi/pyversions/checksec.py" alt="Python version badge"/>
-  </a>
-  <a href="https://gitter.im/checksec-py/community?utm_source=share-link&utm_medium=link&utm_campaign=share-link">
-    <img src="https://badges.gitter.im/checksec-py/community.svg" />
-  </a>
-</p>
-<p align="center">
-  <a href="https://pepy.tech/project/checksec.py">
-    <img src="https://pepy.tech/badge/checksec-py" />  
-  </a>
-  <a href="https://pepy.tech/project/checksec.py">
-    <img src="https://img.shields.io/pypi/dm/checksec.py?color=blue&label=downloads&style=flat-square" />
-  </a>
-</p>
+Python 3.10 through 3.13 is supported. LIEF 0.17.2 is the only runtime
+dependency.
 
-<p align="center">
-  <a href="https://asciinema.org/a/363216">
-    <img src="https://user-images.githubusercontent.com/964610/94983280-9d007c80-0541-11eb-8462-3da5b7bce35b.png" />
-  </a>
-</p>
+```sh
+git clone https://github.com/cardboardboxpepe/libchecksec-py.git
+cd libchecksec-py
+python -m pip install .
+```
 
-## Table of Contents
+## Library API
 
-- [Overview](#overview)
-- [Requirements](#requirements)
-- [Setup](#setup)
-    - [Windows](#windows)
-    - [Linux](#linux)
-- [Usage](#usage)
-- [FAQ](#faq)
-- [References](#references)
-- [License](#license)
-- [Contributors](#contributors)
+```python
+from libchecksec import AnalysisError, analyze
 
-## Overview
+try:
+    result = analyze("./program")
+    print(result.to_text())
+    data = result.to_dict()
+    print(result.to_json(indent=2))
+except AnalysisError as error:
+    print(error)
+```
 
-A simple tool to verify the security properties of your binaries.
+`analyze` accepts a path to one ELF or PE file and returns an immutable
+`AnalysisResult`. Its JSON-compatible dictionary has `schema_version`, `file`,
+`format`, `architecture`, `bits`, `endianness`, `needed_libraries`, `checks`,
+and `warnings`. Each check contains a `status`, evidence, and sometimes a
+reason. Statuses include `enabled`, `disabled`, `unknown`, `not_applicable`,
+`full`, `partial`, `absent`, `present`, and `dso`; their interpretation depends
+on the check. The output schema is versioned independently of the package.
 
-These properties can be enabled by your compiler to enforce the security of your executables, and mitigate exploits.
-However it can be challenging to apply them on a whole system.
+For ELF, `needed_libraries` lists direct `DT_NEEDED` entries. For PE, it lists
+ordinary imported library names followed by delay-import library names, in
+table order. Neither list is a transitive dependency resolution.
 
-Check the level of security your Linux distro / Windows release is providing you !
+### Fortification
 
-Supported formats:
+ELF fortify analysis can use an explicitly supplied reference libc:
 
-- [x] `ELF`
-- [x] `PE`
-- [ ] `Mach-O`
+```python
+result = analyze("./program", reference_libc="/path/to/libc.so.6")
+```
 
-Based on:
-- [Rich](https://github.com/willmcgugan/rich): Beautiful terminal output formatting
-- [LIEF](https://github.com/lief-project/LIEF): Cross-platform library to parse, modify and abstract ELF, PE and Mach-O formats
+Without a reference, fortifiable symbols and coverage are unknown (`null` in
+JSON), even when fortified imports are visible. A reference library should
+match the target's environment; the analyzer does not discover the target's
+libc automatically. Fortification coverage is based on imported symbol
+information, not a proof that all relevant code is protected.
 
-## Requirements
+## Command line
 
-![](https://img.shields.io/pypi/pyversions/checksec.py)
+```sh
+libchecksec ./program
+libchecksec --json ./program ./other-program
+libchecksec --reference-libc /path/to/libc.so.6 ./program
+```
 
-## Setup
+The CLI accepts explicit files, prints successful results even when another
+file fails, and exits nonzero if any file cannot be analyzed. JSON output is
+an object for one successful requested file and an array for multiple files.
 
-### Windows
+## Scope and limitations
 
-You find the `checksec.exe` on the latest Github releases:
+ELF checks include RELRO, stack canary evidence, NX, PIE, RPATH, RUNPATH,
+symbols, and fortification. PE checks cover relevant header flags, stack-cookie
+and SafeSEH evidence, and Authenticode presence. Signature presence is not
+certificate-chain trust verification. Some findings depend on symbol or header
+evidence and cannot establish complete protection. Unknown and inapplicable
+results are distinct from disabled or absent results. This is a static analysis;
+it does not verify runtime loader behavior or security of the execution
+environment. LIEF can emit parser diagnostics to stderr for malformed inputs.
+Parsing uses native code without built-in sandboxing or resource limits; callers
+handling untrusted files should isolate the parser and bound resources.
 
-<a href="https://github.com/Wenzel/checksec.py/releases/latest">
-  <img src="https://img.shields.io/badge/Windows%20release-download-blue?style=for-the-badge"/>
-</a>
+## Attribution and license
 
-### Linux
-
-<a href="https://pypi.org/project/checksec.py/">
-  <img src="https://img.shields.io/pypi/v/checksec.py?color=blue&label=PyPI%20package&style=for-the-badge" />
-</a>
-
-~~~
-python3 -m venv venv
-source venv/bin/activate
-(venv) pip install checksec.py
-~~~
-
-## Usage
-
-~~~
-(venv) checksec <file_or_directory>...
-~~~
-
-Check `--help` for more options (_JSON output_, _recursive walk_, _workers count_)
-
-## FAQ
-
-1️⃣ What's the difference between [`checksec.py`](https://github.com/Wenzel/checksec.py) and [`checksec.sh`](https://github.com/slimm609/checksec.sh) ?
-
-|                            | checksec.py | checksec.sh |
-|----------------------------|:-----------:|:-----------:|
-| Cross-Platform support      |     ✔       |     ❌      |
-| Distributed workload        |     ✔       |     ❌      |
-| Scan file                  |      ✔      |      ✔      |
-| Scan directory             |      ✔      |      ✔      |
-| Scan directory recursively |      ✔      |      ❌     |
-| Specify libc path          |      ✔      |      ❌     |
-| Scan process               |      ❌     |     ✔       |
-| Scan process libs          |      ❌     |     ✔       |
-| Scan kernel config         |      ❌     |     ✔       |
-| Output Cli                 |      ✔      |      ✔      |
-| Output JSON                |      ✔      |      ✔      |
-| Output CSV                 |      ❌     |     ✔       |
-| Output XML                 |      ❌     |     ✔       |
-| ELF: Relro                 |     ✔       |     ✔       |
-| ELF: Canary                |      ✔      |      ✔      |
-| ELF: NX                    |      ✔      |      ✔      |
-| ELF: PIE                   |      ✔      |      ✔      |
-| ELF: RPATH                 |      ✔      |      ✔      |
-| ELF: RUNPATH               |      ✔      |      ✔      |
-| ELF: Symbols               |      ✔      |      ✔      |
-| ELF: Fortify               |      ✔      |      ✔      |
-| ELF: Fortified             |      ✔      |      ✔      |
-| ELF: Fortifable            |      ✔      |      ✔      |
-| ELF: Fortify Score         |      ✔      |      ❌       |
-
-
-2️⃣ What's the difference between [`checksec.py`](https://github.com/Wenzel/checksec.py) and [`winchecksec`](https://github.com/trailofbits/winchecksec) ?
-
-|                             | checksec.py | winchecksec |
-|-----------------------------|:-----------:|:-----------:|
-| Cross-Platform support      |     ✔       |     ✔      |
-| Distributed workload        |     ✔       |     ❌       |
-| Scan file                   |     ✔       |     ✔       |
-| Scan directory              |     ✔       |     ❌      |
-| Scan directory recursively  |     ✔       |     ❌      |
-| Output CLI                  |     ✔       |    ✔        |
-| Output JSON                 |     ✔       |    ✔        |
-| PE: ASLR - DYNAMIC_BASE     |     ✔       |    ✔        |
-| PE: ASLR - HIGHENTROPYVA    |     ✔       |    ✔        |
-| PE: INTEGRITYCHECK          |     ✔       |    ✔        |
-| PE: Authenticode signed     |     ✔       |    ✔        |
-| PE: DEP                     |     ✔       |   ✔         |
-| PE: Manifest Isolation      |     ✔       |    ✔        |
-| PE: SEH                     |     ✔       |    ✔        |
-| PE: SafeSEH                 |     ✔       |    ✔        |
-| PE: Control Flow Guard      |     ✔       |    ✔        |
-| PE: Return Flow Guard       |     ❌      |      ✔      |
-| PE: Stack Cookie            |     ✔       |      ✔      |
-
-3️⃣ `checksec` is slow on some huge binaries ! What's happening ?!
-
-`checksec.py` relies on the [`LIEF`](https://github.com/lief-project/LIEF) library to parse `PE/ELF/MachO` formats.
-
-➡️The library doesn't offer at this point _on-demand_ parsing, so it will parse and fetch unnecessary data.
-
-➡️Retrieving symbols can be slow (ex: `pandoc`, `118M`, `+300 000` symbols, `+2m 20sec`). See this [issue](https://github.com/Wenzel/checksec.py/issues/52)
-
-4️⃣ I sent a `CTRL-C` to cancel `checksec.py` processing, the app doesn't want to quit
-
-`checksec.py` is working with multiple process workers to parallelize its execution and binary processing.
-When a `CRTL-C` is received, `checksec.py` will [wait](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor.shutdown) for them to stop.
-
-Sometimes, this is not working, and I don't know why at this point.
-You can kill the remaining Python workers afterwards.
-
-## References
-
-- [@apogiatzis](https://github.com/apogiatzis) [Gist checksec.py](https://gist.github.com/apogiatzis/fb617cd118a9882749b5cb167dae0c5d)
-- [checksec.sh](https://github.com/slimm609/checksec.sh)
-- [winchecksec](https://github.com/trailofbits/winchecksec)
-
-## License
-
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-
-## Contributors
-
-[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/0)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/0)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/1)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/1)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/2)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/2)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/3)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/3)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/4)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/4)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/5)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/5)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/6)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/6)[![](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/images/7)](https://sourcerer.io/fame/Wenzel/Wenzel/checksec.py/links/7)
+This project derives from [checksec.py](https://github.com/Wenzel/checksec.py)
+by Mathieu Tarral and its contributors. It remains licensed under the
+[GNU General Public License, version 3 only](LICENSE).

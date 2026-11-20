@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "libchecksec-py"
-version = "0.11.3"
+version = "0.11.4"
 description = "Static binary security-property inspection using LIEF"
 authors = ["Mathieu Tarral <mathieu.tarral@protonmail.com>"]
 readme = "README.md"
@@ -19,6 +19,7 @@ lief = "0.17.2"
 [tool.poetry.group.dev.dependencies]
 pytest = "8.4.1"
 basedpyright = "1.40.2"
+typing-extensions = "4.15.0"
 
 [build-system]
 requires = ["poetry-core>=2.0"]
@@ -28,7 +29,8 @@ build-backend = "poetry.core.masonry.api"
 line-length = 120
 
 [tool.basedpyright]
-include = ["libchecksec"]
+include = ["libchecksec", "tests"]
+exclude = ["tests/typecheck/invalid.py"]
 typeCheckingMode = "strict"
 pythonVersion = "3.10"
 pythonPlatform = "All"

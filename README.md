@@ -112,10 +112,21 @@ Initialize the fixture submodule and install the package and test tools:
 
 ```sh
 git submodule update --init tests/binaries
-python -m pip install -e . pytest==8.4.1 black==25.1.0
+python -m pip install -e . pytest==8.4.1 black==25.1.0 basedpyright==1.40.2 typing-extensions==4.15.0
 python -m pytest
 python -m black --check libchecksec tests
 ```
+
+### Type checking
+
+Install the development dependencies (including `basedpyright==1.40.2`) and
+select the Python environment containing the package and LIEF in your editor.
+Run `basedpyright --warnings` from the
+repository root to check the library and regression tests in strict mode. CI also builds a
+wheel and checks its installed `py.typed` package with `basedpyright
+--verifytypes libchecksec --ignoreexternal`, along with positive and negative consumer examples
+in `tests/typecheck/`. Activate the installed wheel environment before running
+`--verifytypes`. The completeness check excludes external LIEF types.
 
 ## Scope and limitations
 

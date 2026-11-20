@@ -32,8 +32,8 @@ except AnalysisError as error:
 `analyze` accepts a path to one ELF or PE file and returns an immutable
 `AnalysisResult`. Its JSON-compatible dictionary has `schema_version`, `file`,
 `format`, `architecture`, `bits`, `endianness`, `needed_libraries`, `checks`,
-and `warnings`, and `addresses`. Each check contains a `status`, evidence, and sometimes a
-reason. Statuses include `enabled`, `disabled`, `unknown`, `not_applicable`,
+`warnings`, and `addresses`. Each check contains a `status`, evidence, and
+sometimes a reason. Statuses include `enabled`, `disabled`, `unknown`, `not_applicable`,
 `full`, `partial`, `absent`, `present`, and `dso`; their interpretation depends
 on the check. The output schema is versioned independently of the package.
 
@@ -80,6 +80,17 @@ libchecksec --reference-libc /path/to/libc.so.6 ./program
 The CLI accepts explicit files, prints successful results even when another
 file fails, and exits nonzero if any file cannot be analyzed. JSON output is
 an object for one successful requested file and an array for multiple files.
+
+## Development and tests
+
+Initialize the fixture submodule and install the package and test tools:
+
+```sh
+git submodule update --init tests/binaries
+python -m pip install -e . pytest==8.4.1 black==25.1.0
+python -m pytest
+python -m black --check libchecksec tests
+```
 
 ## Scope and limitations
 

@@ -2,9 +2,11 @@
 
 from .api import analyze
 from .errors import AnalysisError, ErrorParsingFailed, UnsupportedFormatError
-from .models import AnalysisResult, Finding, FortifyFinding, Status
+from .models import AddressInfo, AddressLocation, AnalysisResult, Finding, FortifyFinding, Status
 
 __all__ = [
+    "AddressInfo",
+    "AddressLocation",
     "AnalysisError",
     "AnalysisResult",
     "ErrorParsingFailed",

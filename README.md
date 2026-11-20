@@ -32,7 +32,7 @@ except AnalysisError as error:
 `analyze` accepts a path to one ELF or PE file and returns an immutable
 `AnalysisResult`. Its JSON-compatible dictionary has `schema_version`, `file`,
 `format`, `architecture`, `bits`, `endianness`, `needed_libraries`, `checks`,
-and `warnings`. Each check contains a `status`, evidence, and sometimes a
+and `warnings`, and `addresses`. Each check contains a `status`, evidence, and sometimes a
 reason. Statuses include `enabled`, `disabled`, `unknown`, `not_applicable`,
 `full`, `partial`, `absent`, `present`, and `dso`; their interpretation depends
 on the check. The output schema is versioned independently of the package.
@@ -40,6 +40,20 @@ on the check. The output schema is versioned independently of the package.
 For ELF, `needed_libraries` lists direct `DT_NEEDED` entries. For PE, it lists
 ordinary imported library names followed by delay-import library names, in
 table order. Neither list is a transitive dependency resolution.
+
+### Address metadata
+
+The `addresses` field reports `image_base`, `preferred_image_base`, `entry`,
+and `main`. Entry and main each contain an `address`, a `kind`, a `symbol`,
+and a `reason`; unavailable values are `null`. Addresses marked
+`image_relative` are offsets from the image base, while `virtual_address`
+values use the static image's preferred mapping. A main address requires a
+defined main function symbol; it is not guessed from the entry point.
+
+These values come from the file, not a running process. For relocatable images,
+the actual runtime image base is unknown and `image_base` is `null`. Even when
+a preferred base is reported, a loader may map an image elsewhere; in
+particular PE images can be rebased when relocation information permits it.
 
 ### Fortification
 

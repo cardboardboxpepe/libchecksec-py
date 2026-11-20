@@ -118,5 +118,10 @@ def analyze(path: Path | str, reference_libc: Path | str | None = None) -> Analy
         checks, needed, warnings = analyze_pe(binary)
     else:
         raise UnsupportedFormatError(target_path)
+    from .addresses import analyze_addresses
+
     file_format, architecture, bits, endianness = _metadata(binary)
-    return AnalysisResult(1, str(target_path), file_format, architecture, bits, endianness, needed, checks, warnings)
+    addresses = analyze_addresses(binary)
+    return AnalysisResult(
+        1, str(target_path), file_format, architecture, bits, endianness, needed, checks, warnings, addresses
+    )

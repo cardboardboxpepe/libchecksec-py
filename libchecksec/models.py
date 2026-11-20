@@ -65,6 +65,39 @@ class FortifyFinding:
 
 
 @dataclass(frozen=True)
+class AddressLocation:
+    """Describe an address, its interpretation, associated symbol and reason."""
+
+    address: int | None
+    kind: str | None
+    symbol: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the address and its attributes as JSON-compatible values."""
+        return {"address": self.address, "kind": self.kind, "symbol": self.symbol, "reason": self.reason}
+
+
+@dataclass(frozen=True)
+class AddressInfo:
+    """Describe the image base, preferred base, entry point and main symbol."""
+
+    image_base: int | None
+    preferred_image_base: int | None
+    entry: AddressLocation
+    main: AddressLocation
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return fresh JSON-compatible address metadata, preserving nulls."""
+        return {
+            "image_base": self.image_base,
+            "preferred_image_base": self.preferred_image_base,
+            "entry": self.entry.to_dict(),
+            "main": self.main.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class AnalysisResult:
     """Hold a versioned analysis, its file metadata, checks and warnings."""
 
@@ -77,6 +110,7 @@ class AnalysisResult:
     needed_libraries: tuple[str, ...]
     checks: tuple[tuple[str, Finding | FortifyFinding], ...]
     warnings: tuple[str, ...]
+    addresses: AddressInfo | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a new JSON-compatible dictionary for the entire analysis."""
@@ -90,6 +124,7 @@ class AnalysisResult:
             "needed_libraries": list(self.needed_libraries),
             "checks": {name: finding.to_dict() for name, finding in self.checks},
             "warnings": list(self.warnings),
+            "addresses": self.addresses.to_dict() if self.addresses is not None else None,
         }
 
     def to_json(self, *, indent: int | None = None) -> str:
@@ -102,6 +137,17 @@ class AnalysisResult:
         for name, finding in self.checks:
             detail = f" ({finding.reason})" if finding.reason else ""
             lines.append(f"  {name}: {finding.status.value}{detail}")
+        if self.addresses is not None:
+
+            def format_address(value: int | None) -> str:
+                """Return value as hexadecimal or an unavailable marker."""
+                return hex(value) if value is not None else "unknown"
+
+            lines.append(f"  image base: {format_address(self.addresses.image_base)}")
+            lines.append(f"  preferred image base: {format_address(self.addresses.preferred_image_base)}")
+            for label, location in (("entry", self.addresses.entry), ("main", self.addresses.main)):
+                detail = location.kind or location.reason or "unknown"
+                lines.append(f"  {label}: {format_address(location.address)} ({detail})")
         for warning in self.warnings:
             lines.append(f"  warning: {warning}")
         return "\n".join(lines)

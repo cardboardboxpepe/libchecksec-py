@@ -1,16 +1,14 @@
-import json
-import shutil
-import subprocess
+"""Shared paths for real ELF and PE regression fixtures."""
+
 from pathlib import Path
-from typing import Dict
 
-CHECKSEC_BIN = shutil.which("checksec")
+import pytest
 
 
-def run_checksec(bin_path: Path, libc_path: Path = None) -> Dict:
-    """Runs checksec from command line, returns json output as dict"""
-    cmd = [CHECKSEC_BIN, str(bin_path), "-j"]
-    if libc_path:
-        cmd.extend(["-s", str(libc_path)])
-    output = subprocess.check_output(cmd)
-    return json.loads(output.decode())
+@pytest.fixture(scope="session")
+def binaries() -> Path:
+    """Return the initialized pinned fixture directory; fail if it is missing."""
+    directory = Path(__file__).parent / "binaries"
+    if not (directory / "elf" / "default").is_file():
+        pytest.fail("Initialize fixtures with git submodule update --init tests/binaries")
+    return directory
